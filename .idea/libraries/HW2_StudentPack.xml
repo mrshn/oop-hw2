@@ -1,0 +1,9 @@
+<component name="libraryTable">
+  <library name="HW2-StudentPack">
+    <CLASSES>
+      <root url="jar://$PROJECT_DIR$/HW2-StudentPack.zip!/" />
+    </CLASSES>
+    <JAVADOC />
+    <SOURCES />
+  </library>
+</component>
