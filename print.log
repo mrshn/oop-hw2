@@ -1,0 +1,9 @@
+[C]PRINTER  [00]; 0000000000025001700; Printer 0 is launched.
+[C]PRINTER  [01]; 0000000000025001700; Printer 1 is launched.
+[C]PRINTER  [00]; 0000000000087019800; Printing        {Instructor, ID:001, 050ms} is done!
+[C]PRINTER  [01]; 0000000000134016800; Printing        {Student   , ID:000, 100ms} is done!
+[C]PRINTER  [00]; 0000000000154019800; Printing        {Student   , ID:002, 066ms} is done!
+MT          [00]; 0000000003011689200; Closing Room
+[C]PRINTER  [00]; 0000000003013663500; Terminating...
+[C]PRINTER  [01]; 0000000003013663500; Terminating...
+MT          [00]; 0000000003014662100; Room is Closed
