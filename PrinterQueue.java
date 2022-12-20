@@ -17,8 +17,8 @@ public class PrinterQueue implements IMPMCQueue<PrintItem>
     private int curCount ;
     private boolean queueIsClosed;
 
-    private int waiting_jobs ;
-    private int waiting_printers ;
+    private int waitingProducerCount ;
+    private int waitingConsumerCount ;
 
 
     public PrinterQueue(int maxElementCount)
@@ -32,113 +32,174 @@ public class PrinterQueue implements IMPMCQueue<PrintItem>
         curCount = 0;
         queueIsClosed = false;
 
-        waiting_jobs = 0;
-        waiting_printers = 0;
+        waitingProducerCount = 0;
+        waitingConsumerCount = 0;
 
         teachersQueue = new LinkedList<>();
         studentsQueue = new LinkedList<>();
 
     }
 
-    private boolean isQueueFull() {
+    /**
+     * Only called with lock
+     * @return if Queue is full
+     */
+    private boolean isQueueFull()
+    {
         return (maxElementCount == curCount);
     }
 
-    private boolean isQueueEmpty() {
+    /**
+     * Only called with lock
+     * @return if Queue is empty
+     */
+    private boolean isQueueEmpty()
+    {
         return (0 == curCount);
     }
 
-    public void Add(PrintItem data) throws QueueIsClosedExecption {
+    public void Add(PrintItem data) throws QueueIsClosedExecption
+    {
         lock.lock();
-        try {
-            while( isQueueFull() ) {
-                if (queueIsClosed) {
+        try
+        {
+            while( isQueueFull() )
+            {
+                if (queueIsClosed)
+                {
                     throw new QueueIsClosedExecption();
                 }
-                waiting_jobs++;
+                waitingProducerCount++;
                 notFull.await();
-                waiting_jobs--;
+                waitingProducerCount--;
             }
-            if (queueIsClosed) {
+            if (queueIsClosed)
+            {
+
                 throw new QueueIsClosedExecption();
             }
-            addItemToQueue(data);
-            notEmpty.signal();
-        } catch (InterruptedException interruptedException) {
-            interruptedException.printStackTrace();
+
+            addHelper(data);
+
         }
-        finally {
+        catch (InterruptedException ie)
+        {
+            ie.printStackTrace();
+        }
+        finally
+        {
             lock.unlock();
         }
     }
 
-    public PrintItem Consume() throws QueueIsClosedExecption{
-        PrintItem item = null;
-        lock.lock();
-        try {
-            while ( isQueueEmpty() ) {
-                if (queueIsClosed && curCount==0) {
-                    throw new QueueIsClosedExecption();
-                }
-                waiting_printers++;
-                notEmpty.await();
-                waiting_printers--;
-            }
-            if (queueIsClosed && curCount==0) {
-                throw new QueueIsClosedExecption();
-            }
-            item = getItemFromQueue();
-            notFull.signal();
-
-        } catch (InterruptedException interruptedException) {
-            interruptedException.printStackTrace();
-        }
-        finally {
-            lock.unlock(); // Release the lock
-        }
-        return item;
-    }
-
-    public int RemainingSize() {
-
-        int remainingSize;
-        lock.lock();
-        remainingSize = maxElementCount - curCount;
-        lock.unlock();
-
-        return remainingSize;
-    }
-
-    public void CloseQueue() {
-        // queue is closed
-        lock.lock();
-        try  {
-            queueIsClosed = true;
-            // terminate all waiting threads here
-            if (waiting_jobs>0) notFull.signalAll();
-            if ((curCount == 0) && (waiting_printers>0)) notEmpty.signalAll();
-        } finally {
-            lock.unlock(); // Release the lock
-        }
-    }
-
-    private PrintItem getItemFromQueue() {
-        PrintItem item = teachersQueue.poll();
-        if(item == null) {
-            item = studentsQueue.poll();
-        }
-        if(item != null) {
-            curCount--;
-        }
-        return item;
-    }
-
-    private void addItemToQueue(PrintItem p) {
-        if (p.getPrintType() == PrintItem.PrintType.INSTRUCTOR){
+    /**
+     * Only called with lock
+     * @param p is the item to be added
+     */
+    private void addHelper(PrintItem p)
+    {
+        if (p.getPrintType() == PrintItem.PrintType.INSTRUCTOR)
+        {
             teachersQueue.add(p);
-        } else {
+        } else
+        {
             studentsQueue.add(p);
         }
         curCount++;
+        notEmpty.signal();
     }
+
+    public PrintItem Consume() throws QueueIsClosedExecption
+    {
+        PrintItem item = null;
+        lock.lock();
+        try
+        {
+            while ( isQueueEmpty() )
+            {
+                if ( queueIsClosed )
+                {
+                    throw new QueueIsClosedExecption();
+                }
+                waitingConsumerCount++;
+                notEmpty.await();
+                waitingConsumerCount--;
+            }
+
+            item = consumeHelper();
+
+        }
+        catch ( InterruptedException ie )
+        {
+            ie.printStackTrace();
+        }
+        finally
+        {
+            lock.unlock();
+        }
+        return item;
+    }
+
+    /**
+     * Only called with lock
+     * First tries to consume from the teachersQueue
+     * Secondly tries to consume from the studentsQueue if not already consumed from the teachersQueue
+     * @return the item consumed
+     */
+    private PrintItem consumeHelper()
+    {
+        // Try polling from teachers first
+        PrintItem item = teachersQueue.poll();
+
+        if( item == null )
+        {
+            // if teachers were empty -> poll from students
+            item = studentsQueue.poll();
+        }
+
+        if( item != null )
+        {
+            // if polling was succesfull
+            curCount--;
+            notFull.signal();
+        }
+
+        return item;
+    }
+
+    public int RemainingSize()
+    {
+        int remainingSize;
+            remainingSize = maxElementCount - curCount;
+        return remainingSize;
+    }
+
+    public void CloseQueue()
+    {
+        lock.lock();
+        try
+        {
+            queueIsClosed = true;
+            if ( waitingConsumerCount > 0 )
+            {
+                notEmpty.signalAll();
+            }
+            if ( waitingProducerCount > 0 )
+            {
+                notFull.signalAll();
+            }
+        }
+        catch (IllegalMonitorStateException imse)
+        {
+            imse.printStackTrace();
+        }
+        finally
+        {
+            lock.unlock(); // Release the lock
+        }
+    }
+
+
+
+
 }

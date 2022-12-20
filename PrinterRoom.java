@@ -1,4 +1,5 @@
 import java.util.Collections;
+import java.util.ConcurrentModificationException;
 import java.util.List;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
@@ -11,54 +12,50 @@ public class PrinterRoom
         // TODO: Implement
         // ....
 
-        private int pId;
-        private IMPMCQueue<PrintItem> roomQ;
-        private Thread printerThread ;
-
+        private final Thread printerThread ;
+        private final IMPMCQueue<PrintItem> roomQ;
+        private final int pId;
 
         public Printer(int id, IMPMCQueue<PrintItem> roomQueue)
         {
             // TODO: Implement
-            pId = id;
-            roomQ = roomQueue;
-
-            this.launch();
-        }
-
-        public void run()
-        {
-            SyncLogger.Instance().Log(SyncLogger.ThreadType.CONSUMER, this.pId,
-                    String.format(SyncLogger.FORMAT_PRINTER_LAUNCH, pId));
-            PrintItem item = null;
-            try {
-                while (true)
-                {
-                    item = roomQ.Consume();
-                    item.print();
-                    SyncLogger.Instance().Log(SyncLogger.ThreadType.CONSUMER, this.pId,
-                            String.format(SyncLogger.FORMAT_PRINT_DONE, item));
-                }
-            }
-            catch (QueueIsClosedExecption e) {
-                // TODO: check if queue is closed
-                if (item == null) {
-                    SyncLogger.Instance().Log(SyncLogger.ThreadType.CONSUMER, -1,
-                            String.format(SyncLogger.FORMAT_TERMINATING, -1));
-                }
-                SyncLogger.Instance().Log(SyncLogger.ThreadType.CONSUMER, this.pId,
-                        String.format(SyncLogger.FORMAT_TERMINATING, item));
-            }
-            finally {}
-        }
-
-        private void launch(){
+            this.pId = id;
+            this.roomQ = roomQueue;
+            // When instantiated, it creates its own thread and
+            // runs over the shared queue of the PrinterRoom class
             this.printerThread = new Thread(this);
             this.printerThread.start();
         }
 
-        public void waitTermination() throws InterruptedException {
+        public void joinPrinter() throws InterruptedException
+        {
             this.printerThread.join();
         }
+
+        private void logHelper(String s)
+        {
+            SyncLogger.Instance().Log( SyncLogger.ThreadType.CONSUMER, this.pId, s );
+        }
+
+        public void run()
+        {
+            PrintItem item = null;
+            logHelper( String.format(SyncLogger.FORMAT_PRINTER_LAUNCH, pId) );
+            try
+            {
+                while (true)
+                {
+                    item = roomQ.Consume();
+                    item.print();
+                    logHelper( String.format(SyncLogger.FORMAT_PRINT_DONE, item) );
+                }
+            }
+            catch (QueueIsClosedExecption exception)
+            {
+                logHelper( String.format(SyncLogger.FORMAT_TERMINATING, item) );
+            }
+        }
+
     }
 
     private IMPMCQueue<PrintItem> roomQueue;
@@ -80,25 +77,41 @@ public class PrinterRoom
     public boolean SubmitPrint(PrintItem item, int producerId)
     {
         // TODO: Implement
-        try {
+        try
+        {
+            // Logging submitting effort, before potentially waiting on the queue.
+            SyncLogger.Instance().Log( SyncLogger.ThreadType.PRODUCER, producerId, String.format(SyncLogger.FORMAT_ADD, item) );
             roomQueue.Add(item);
             return true;
-        } catch (QueueIsClosedExecption e) {
+        }
+        catch (QueueIsClosedExecption e)
+        {
+            // Logging if room is closed and submitting is skipped
+            SyncLogger.Instance().Log( SyncLogger.ThreadType.PRODUCER, producerId, String.format(SyncLogger.FORMAT_ROOM_CLOSED, item) );
             return false;
         }
-
     }
 
-    public void CloseRoom() throws InterruptedException
+    public void CloseRoom()
     {
         // TODO: Implement
-
-        // reject additions to queue
         roomQueue.CloseQueue();
         Iterator<Printer> iterator = this.printers.iterator();
-        while (iterator.hasNext()) {
-            iterator.next().waitTermination();
+        try
+        {
+            while (iterator.hasNext())
+            {
+                iterator.next().joinPrinter();
+            }
         }
-
+        catch (InterruptedException e)
+        {
+            e.printStackTrace();
+        }
+        catch (ConcurrentModificationException e)
+        {
+            // Should not happen since printers list is final ?
+            e.printStackTrace();
+        }
     }
 }
